@@ -4,7 +4,7 @@ A browser-based viewer for Claude conversation trees, showing all branches and a
 
 ## Live Demo
 
-[View the demo](<VERCEL_URL>)
+[View the demo](https://claude-chat-tree-viewer.vercel.app)
 
 ## Features
 
@@ -20,7 +20,7 @@ A browser-based viewer for Claude conversation trees, showing all branches and a
 
 ### Viewing conversations
 
-1. Visit the [live demo](<VERCEL_URL>) or open `index.html` locally
+1. Visit the [live demo](https://claude-chat-tree-viewer.vercel.app) or open `index.html` locally
 2. The demo conversation loads automatically
 3. Click **Load JSON** in the toolbar to view your own exported conversation
 
