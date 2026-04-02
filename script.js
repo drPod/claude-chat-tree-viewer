@@ -67,11 +67,11 @@
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `claude-chat-tree-${chatId}.json`;
+  a.download = `canopy-${chatId}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  console.log(`Downloaded: claude-chat-tree-${chatId}.json`);
+  console.log(`Downloaded: canopy-${chatId}.json`);
 })();

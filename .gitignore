@@ -2,3 +2,4 @@
 *.json
 !demo.json
 !.claude/**
+.vercel

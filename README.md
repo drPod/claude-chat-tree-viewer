@@ -1,10 +1,10 @@
-# Claude Chat Tree Viewer
+# Canopy
 
 A browser-based viewer for Claude conversation trees, showing all branches and alternate responses in three views: tree, linear, and minimap.
 
 ## Live Demo
 
-[View the demo](https://claude-chat-tree-viewer.vercel.app)
+[View the demo](https://canopy-chat.vercel.app)
 
 ## Features
 
@@ -20,7 +20,7 @@ A browser-based viewer for Claude conversation trees, showing all branches and a
 
 ### Viewing conversations
 
-1. Visit the [live demo](https://claude-chat-tree-viewer.vercel.app) or open `index.html` locally
+1. Visit the [live demo](https://canopy-chat.vercel.app) or open `index.html` locally
 2. The demo conversation loads automatically
 3. Click **Load JSON** in the toolbar to view your own exported conversation
 
