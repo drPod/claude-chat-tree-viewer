@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Chat Tree Viewer</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --human: #3fb950;
+    --human-bg: #0d2818;
+    --human-border: #1a4028;
+    --assistant: #a78bfa;
+    --assistant-bg: #1a1533;
+    --assistant-border: #2d2655;
+    --branch: #f0883e;
+    --branch-bg: #2a1d0e;
+    --active-leaf: #58a6ff;
+    --line: #30363d;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* Main viewer */
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .toolbar h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .toolbar .stats {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+
+  .toolbar .spacer { flex: 1; }
+
+  .view-toggle {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .view-toggle button {
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+  }
+
+  .view-toggle button:not(:last-child) {
+    border-right: 1px solid var(--border);
+  }
+
+  .view-toggle button.active {
+    background: var(--active-leaf);
+    color: #fff;
+  }
+
+  .btn {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+  }
+
+  .btn:hover { background: var(--border); }
+
+  /* Tree view */
+  #tree-view {
+    padding: 1.5rem;
+  }
+
+  .tree-node {
+    position: relative;
+    margin-left: 1.5rem;
+  }
+
+  .tree-node::before {
+    content: '';
+    position: absolute;
+    left: -1.5rem;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--line);
+  }
+
+  .tree-node:last-child::before {
+    bottom: calc(100% - 1.5rem);
+  }
+
+  .tree-node::after {
+    content: '';
+    position: absolute;
+    left: -1.5rem;
+    top: 1.2rem;
+    width: 1.5rem;
+    height: 2px;
+    background: var(--line);
+  }
+
+  .tree-root {
+    margin-left: 0;
+  }
+
+  .tree-root::before, .tree-root::after { display: none; }
+
+  .message-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 0.5rem 0;
+    overflow: hidden;
+    transition: all 0.15s;
+  }
+
+  .message-card:hover {
+    border-color: var(--text-muted);
+  }
+
+  .message-card.is-branch-point {
+    border-color: var(--branch);
+    box-shadow: 0 0 0 1px var(--branch);
+  }
+
+  .message-card.is-active-leaf {
+    border-color: var(--active-leaf);
+    box-shadow: 0 0 8px rgba(88, 166, 255, 0.3);
+  }
+
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .msg-header .sender {
+    font-weight: 600;
+    text-transform: capitalize;
+    flex-shrink: 0;
+  }
+
+  .msg-header .sender.human { color: var(--human); }
+  .msg-header .sender.assistant { color: var(--assistant); }
+
+  .msg-header .timestamp {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .msg-header .preview {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.7;
+  }
+
+  .msg-header .badges { margin-left: auto; display: flex; gap: 0.3rem; flex-shrink: 0; }
+
+  .badge {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .badge.branch {
+    background: var(--branch-bg);
+    color: var(--branch);
+    border: 1px solid var(--branch);
+  }
+
+  .badge.leaf {
+    background: #0d2d6b;
+    color: var(--active-leaf);
+    border: 1px solid var(--active-leaf);
+  }
+
+  .msg-header .collapse-icon {
+    transition: transform 0.15s;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+  }
+
+  .msg-header .collapse-icon.collapsed {
+    transform: rotate(-90deg);
+  }
+
+  .msg-body {
+    padding: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .msg-body.collapsed { display: none; }
+
+  .msg-body code {
+    background: var(--surface-2);
+    padding: 0.15rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+  }
+
+  .msg-body pre {
+    background: var(--surface-2);
+    padding: 0.75rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0.5rem 0;
+  }
+
+  .msg-body pre code {
+    background: none;
+    padding: 0;
+  }
+
+  /* Branch container */
+  .branch-container {
+    margin: 0.5rem 0 0.5rem 1rem;
+    border-left: 3px solid var(--branch);
+    padding-left: 1rem;
+  }
+
+  .branch-header {
+    font-size: 0.75rem;
+    color: var(--branch);
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .branch-header:hover { color: #f5a623; }
+
+  .branch-header .branch-preview {
+    color: var(--text-muted);
+    font-weight: 400;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 500px;
+  }
+
+  /* Linear (flat) view */
+  #linear-view {
+    display: none;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 1.5rem;
+  }
+
+  .branch-tab-bar {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    flex-wrap: wrap;
+  }
+
+  .branch-tab {
+    background: var(--surface);
+    color: var(--text-muted);
+    border: none;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+    border-right: 1px solid var(--border);
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .branch-tab:last-child { border-right: none; }
+
+  .branch-tab.active {
+    background: var(--active-leaf);
+    color: #fff;
+  }
+
+  .linear-message {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 0.75rem 0;
+    overflow: hidden;
+  }
+
+  .linear-message.human-msg {
+    border-left: 3px solid var(--human);
+  }
+
+  .linear-message.assistant-msg {
+    border-left: 3px solid var(--assistant);
+  }
+
+  .linear-msg-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .linear-msg-body {
+    padding: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Minimap / overview */
+  #minimap-view {
+    display: none;
+    padding: 2rem;
+    overflow-x: auto;
+  }
+
+  .minimap-container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: fit-content;
+  }
+
+  .minimap-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 1px 0;
+  }
+
+  .minimap-node {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.5rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .minimap-node.human-dot {
+    background: var(--human);
+    color: var(--bg);
+  }
+
+  .minimap-node.assistant-dot {
+    background: var(--assistant);
+    color: var(--bg);
+  }
+
+  .minimap-node:hover {
+    transform: scale(1.4);
+    z-index: 10;
+  }
+
+  .minimap-node.active-path {
+    box-shadow: 0 0 6px var(--active-leaf);
+    outline: 2px solid var(--active-leaf);
+  }
+
+  .minimap-connector {
+    width: 12px;
+    height: 2px;
+    background: var(--line);
+    flex-shrink: 0;
+  }
+
+  .minimap-tooltip {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    max-width: 400px;
+    font-size: 0.8rem;
+    z-index: 1000;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    display: none;
+  }
+
+  /* Loading state */
+  #loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div id="viewer">
+  <div class="toolbar">
+    <h2 id="conv-title">Conversation</h2>
+    <span class="stats" id="conv-stats"></span>
+    <div class="spacer"></div>
+    <div class="view-toggle">
+      <button class="active" data-view="tree">Tree</button>
+      <button data-view="linear">Linear</button>
+      <button data-view="minimap">Map</button>
+    </div>
+    <button class="btn" id="expand-all">Expand All</button>
+    <button class="btn" id="collapse-all">Collapse All</button>
+    <button class="btn" id="load-json">Load JSON</button>
+    <input type="file" id="file-input" accept=".json" style="display:none">
+  </div>
+  <div id="loading">Loading conversation...</div>
+  <div id="tree-view"></div>
+  <div id="linear-view"></div>
+  <div id="minimap-view"></div>
+</div>
+
+<div class="minimap-tooltip" id="tooltip"></div>
+
+<script>
+// ===== DATA =====
+let conversationData = null;
+let messageMap = {};
+let childrenMap = {};
+let branchPaths = [];
+let activeLeafId = null;
+
+// ===== INITIALIZATION =====
+// Auto-load demo data
+fetch('./demo.json')
+  .then(r => r.json())
+  .then(data => {
+    conversationData = data;
+    processData();
+    document.getElementById('loading').style.display = 'none';
+    renderTree();
+  })
+  .catch(err => {
+    document.getElementById('loading').textContent = 'Failed to load demo data. Use "Load JSON" to open a file.';
+    console.error('Failed to load demo:', err);
+  });
+
+// Custom JSON upload
+const fileInput = document.getElementById('file-input');
+document.getElementById('load-json').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      conversationData = JSON.parse(e.target.result);
+      processData();
+      document.getElementById('loading').style.display = 'none';
+      // Reset to tree view
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+      document.querySelector('[data-view="tree"]').classList.add('active');
+      document.getElementById('tree-view').style.display = 'block';
+      document.getElementById('linear-view').style.display = 'none';
+      document.getElementById('minimap-view').style.display = 'none';
+      renderTree();
+    } catch (err) {
+      alert('Failed to parse JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ===== DATA PROCESSING =====
+function processData() {
+  const messages = conversationData.chat_messages || [];
+  activeLeafId = conversationData.current_leaf_message_uuid;
+
+  messageMap = {};
+  childrenMap = {};
+
+  // The sentinel UUID used by Claude exports for root-level messages
+  const ROOT_SENTINEL = '00000000-0000-4000-8000-000000000000';
+
+  messages.forEach(msg => {
+    messageMap[msg.uuid] = msg;
+    const rawParent = msg.parent_message_uuid;
+    const parent = (!rawParent || rawParent === ROOT_SENTINEL) ? 'root' : rawParent;
+    if (!childrenMap[parent]) childrenMap[parent] = [];
+    childrenMap[parent].push(msg.uuid);
+  });
+
+  // Find all leaf-to-root paths (branches)
+  branchPaths = [];
+  const leaves = messages.filter(m => !childrenMap[m.uuid] || childrenMap[m.uuid].length === 0);
+  leaves.forEach(leaf => {
+    const path = [];
+    let current = leaf;
+    while (current) {
+      path.unshift(current.uuid);
+      current = current.parent_message_uuid ? messageMap[current.parent_message_uuid] : null;
+    }
+    branchPaths.push(path);
+  });
+
+  // Stats
+  const branchPoints = Object.entries(childrenMap).filter(([, c]) => c.length > 1).length;
+  document.getElementById('conv-title').textContent = conversationData.name || 'Untitled Conversation';
+  document.getElementById('conv-stats').textContent =
+    `${messages.length} messages · ${branchPaths.length} branches · ${branchPoints} branch points`;
+}
+
+// ===== HELPERS =====
+function getMessageText(msg) {
+  if (!msg) return '';
+  if (Array.isArray(msg.content)) {
+    const parts = [];
+    for (const c of msg.content) {
+      if (c.type === 'text' && c.text) {
+        parts.push(c.text);
+      } else if (c.type === 'tool_use') {
+        parts.push(`[Tool: ${c.name || 'unknown'}]`);
+      } else if (c.type === 'tool_result') {
+        parts.push(`[Tool Result]`);
+      }
+    }
+    return parts.join('\n');
+  }
+  return msg.text || msg.content || '';
+}
+
+function truncate(text, len = 200) {
+  if (text.length <= len) return text;
+  return text.substring(0, len) + '...';
+}
+
+function formatTimestamp(ts) {
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleString();
+  } catch { return ''; }
+}
+
+function isBranchPoint(uuid) {
+  return childrenMap[uuid] && childrenMap[uuid].length > 1;
+}
+
+function isOnActivePath(uuid) {
+  let current = activeLeafId;
+  while (current) {
+    if (current === uuid) return true;
+    const msg = messageMap[current];
+    current = msg ? msg.parent_message_uuid : null;
+  }
+  return false;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function getBranchLabel(index, prefix) {
+  if (!prefix) {
+    return String.fromCharCode(65 + index); // A, B, C, D...
+  }
+  return `${prefix}.${index + 1}`; // A.1, A.2, B.1...
+}
+
+function getFirstTextPreview(uuid) {
+  const msg = messageMap[uuid];
+  if (!msg) return '';
+  return truncate(getMessageText(msg).replace(/\n+/g, ' ').trim(), 60);
+}
+
+// ===== TREE VIEW =====
+function renderTree() {
+  const container = document.getElementById('tree-view');
+  container.innerHTML = '';
+
+  const roots = childrenMap['root'] || [];
+  roots.forEach(rootId => {
+    container.appendChild(renderTreeNode(rootId, true, ''));
+  });
+}
+
+function renderTreeNode(uuid, isRoot, branchPrefix) {
+  const msg = messageMap[uuid];
+  if (!msg) return document.createDocumentFragment();
+
+  const wrapper = document.createElement('div');
+  wrapper.className = `tree-node${isRoot ? ' tree-root' : ''}`;
+
+  const card = document.createElement('div');
+  card.className = 'message-card';
+  if (isBranchPoint(uuid)) card.classList.add('is-branch-point');
+  if (uuid === activeLeafId) card.classList.add('is-active-leaf');
+
+  const text = getMessageText(msg);
+  const previewText = truncate(text.replace(/\n+/g, ' ').trim(), 120);
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'msg-header';
+  header.innerHTML = `
+    <span class="collapse-icon collapsed">▼</span>
+    <span class="sender ${msg.sender}">${msg.sender}</span>
+    <span class="timestamp">${formatTimestamp(msg.created_at)}</span>
+    <span class="preview" style="display:block">${escapeHtml(previewText)}</span>
+    <span class="badges">
+      ${isBranchPoint(uuid) ? `<span class="badge branch">${childrenMap[uuid].length} branches</span>` : ''}
+      ${uuid === activeLeafId ? '<span class="badge leaf">active leaf</span>' : ''}
+    </span>
+  `;
+
+  header.addEventListener('click', () => {
+    const body = card.querySelector('.msg-body');
+    const icon = header.querySelector('.collapse-icon');
+    const preview = header.querySelector('.preview');
+    body.classList.toggle('collapsed');
+    icon.classList.toggle('collapsed');
+    preview.style.display = body.classList.contains('collapsed') ? 'block' : 'none';
+  });
+
+  // Body — start collapsed
+  const body = document.createElement('div');
+  body.className = 'msg-body collapsed';
+  body.textContent = text;
+
+  card.appendChild(header);
+  card.appendChild(body);
+  wrapper.appendChild(card);
+
+  // Children
+  const children = childrenMap[uuid] || [];
+  if (children.length === 1) {
+    wrapper.appendChild(renderTreeNode(children[0], false, branchPrefix));
+  } else if (children.length > 1) {
+    children.forEach((childId, i) => {
+      const label = getBranchLabel(i, branchPrefix);
+      const preview = getFirstTextPreview(childId);
+      const isActive = isOnActivePath(childId);
+
+      const branchDiv = document.createElement('div');
+      branchDiv.className = 'branch-container';
+
+      const branchHeader = document.createElement('div');
+      branchHeader.className = 'branch-header';
+      branchHeader.innerHTML = `<span>▼</span> <span>${label}</span>${isActive ? ' <span style="color:var(--active-leaf)">(active)</span>' : ''} <span class="branch-preview">— ${escapeHtml(preview)}</span>`;
+      branchHeader.addEventListener('click', () => {
+        const content = branchDiv.querySelector('.branch-content');
+        const arrow = branchHeader.querySelector('span');
+        if (content.style.display === 'none') {
+          content.style.display = 'block';
+          arrow.textContent = '▼';
+        } else {
+          content.style.display = 'none';
+          arrow.textContent = '▶';
+        }
+      });
+
+      const content = document.createElement('div');
+      content.className = 'branch-content';
+      content.appendChild(renderTreeNode(childId, false, label));
+
+      branchDiv.appendChild(branchHeader);
+      branchDiv.appendChild(content);
+      wrapper.appendChild(branchDiv);
+    });
+  }
+
+  return wrapper;
+}
+
+// ===== LINEAR VIEW =====
+function renderLinear() {
+  const container = document.getElementById('linear-view');
+  container.innerHTML = '';
+
+  if (branchPaths.length === 0) return;
+
+  // Tab bar
+  const tabBar = document.createElement('div');
+  tabBar.className = 'branch-tab-bar';
+
+  branchPaths.forEach((path, i) => {
+    const tab = document.createElement('button');
+    tab.className = 'branch-tab' + (i === 0 ? ' active' : '');
+
+    const isActive = path.includes(activeLeafId);
+
+    // Find the first diverging human message for this path
+    const label = getLinearBranchLabel(i);
+    tab.textContent = `${isActive ? '● ' : ''}${label}`;
+    tab.title = label;
+    tab.dataset.index = i;
+    tab.addEventListener('click', () => {
+      tabBar.querySelectorAll('.branch-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      showBranch(i);
+    });
+    tabBar.appendChild(tab);
+  });
+
+  container.appendChild(tabBar);
+
+  const contentDiv = document.createElement('div');
+  contentDiv.id = 'linear-content';
+  container.appendChild(contentDiv);
+
+  // Show active branch first
+  const activeIdx = branchPaths.findIndex(p => p.includes(activeLeafId));
+  if (activeIdx >= 0) {
+    tabBar.querySelectorAll('.branch-tab').forEach(t => t.classList.remove('active'));
+    tabBar.children[activeIdx].classList.add('active');
+    showBranch(activeIdx);
+  } else {
+    showBranch(0);
+  }
+}
+
+function getLinearBranchLabel(pathIndex) {
+  const path = branchPaths[pathIndex];
+  // Find the first message unique to this path (not shared by all paths)
+  for (const uuid of path) {
+    const isShared = branchPaths.every(p => p.includes(uuid));
+    if (!isShared) {
+      const msg = messageMap[uuid];
+      if (msg) {
+        const text = getMessageText(msg).replace(/\n+/g, ' ').trim();
+        if (text) return truncate(text, 50);
+      }
+    }
+  }
+  return `Path ${pathIndex + 1}`;
+}
+
+function showBranch(index) {
+  const contentDiv = document.getElementById('linear-content');
+  contentDiv.innerHTML = '';
+
+  const path = branchPaths[index];
+  path.forEach(uuid => {
+    const msg = messageMap[uuid];
+    if (!msg) return;
+
+    const div = document.createElement('div');
+    div.className = `linear-message ${msg.sender}-msg`;
+
+    div.innerHTML = `
+      <div class="linear-msg-header">
+        <span class="sender ${msg.sender}">${msg.sender}</span>
+        <span class="timestamp">${formatTimestamp(msg.created_at)}</span>
+        ${isBranchPoint(uuid) ? `<span class="badge branch">${childrenMap[uuid].length} branches</span>` : ''}
+        ${uuid === activeLeafId ? '<span class="badge leaf">active leaf</span>' : ''}
+      </div>
+      <div class="linear-msg-body">${escapeHtml(getMessageText(msg))}</div>
+    `;
+
+    contentDiv.appendChild(div);
+  });
+}
+
+// ===== MINIMAP VIEW =====
+function renderMinimap() {
+  const container = document.getElementById('minimap-view');
+  container.innerHTML = '';
+
+  const tooltip = document.getElementById('tooltip');
+  const mapDiv = document.createElement('div');
+  mapDiv.className = 'minimap-container';
+
+  const roots = childrenMap['root'] || [];
+  if (roots.length === 0) return;
+
+  function renderMinimapNode(uuid, depth) {
+    const msg = messageMap[uuid];
+    if (!msg) return;
+
+    const row = document.createElement('div');
+    row.className = 'minimap-row';
+    row.style.marginLeft = `${depth * 36}px`;
+
+    const node = document.createElement('div');
+    node.className = `minimap-node ${msg.sender === 'human' ? 'human-dot' : 'assistant-dot'}`;
+    if (isOnActivePath(uuid)) node.classList.add('active-path');
+    node.textContent = msg.sender === 'human' ? 'H' : 'A';
+
+    node.addEventListener('mouseenter', (e) => {
+      tooltip.style.display = 'block';
+      tooltip.innerHTML = `
+        <strong style="color: ${msg.sender === 'human' ? 'var(--human)' : 'var(--assistant)'}">${msg.sender}</strong>
+        <span style="color: var(--text-muted); font-size: 0.7rem; margin-left: 0.5rem">${formatTimestamp(msg.created_at)}</span>
+        <div style="margin-top: 0.3rem; color: var(--text)">${escapeHtml(truncate(getMessageText(msg), 300))}</div>
+      `;
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY + 12) + 'px';
+    });
+
+    node.addEventListener('mousemove', (e) => {
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY + 12) + 'px';
+    });
+
+    node.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+    });
+
+    row.appendChild(node);
+
+    if (isBranchPoint(uuid)) {
+      const label = document.createElement('span');
+      label.style.cssText = 'color: var(--branch); font-size: 0.7rem; margin-left: 6px; font-weight: 600;';
+      label.textContent = `⑂ ${childrenMap[uuid].length}`;
+      row.appendChild(label);
+    }
+
+    if (uuid === activeLeafId) {
+      const label = document.createElement('span');
+      label.style.cssText = 'color: var(--active-leaf); font-size: 0.7rem; margin-left: 6px;';
+      label.textContent = '● leaf';
+      row.appendChild(label);
+    }
+
+    mapDiv.appendChild(row);
+
+    const children = childrenMap[uuid] || [];
+    children.forEach(childId => renderMinimapNode(childId, depth + 1));
+  }
+
+  roots.forEach(rootId => renderMinimapNode(rootId, 0));
+  container.appendChild(mapDiv);
+}
+
+// ===== VIEW SWITCHING =====
+document.querySelectorAll('.view-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const view = btn.dataset.view;
+    document.getElementById('tree-view').style.display = view === 'tree' ? 'block' : 'none';
+    document.getElementById('linear-view').style.display = view === 'linear' ? 'block' : 'none';
+    document.getElementById('minimap-view').style.display = view === 'minimap' ? 'block' : 'none';
+
+    if (view === 'linear') renderLinear();
+    if (view === 'minimap') renderMinimap();
+  });
+});
+
+// ===== EXPAND / COLLAPSE =====
+document.getElementById('expand-all').addEventListener('click', () => {
+  document.querySelectorAll('.msg-body').forEach(b => b.classList.remove('collapsed'));
+  document.querySelectorAll('.collapse-icon').forEach(i => i.classList.remove('collapsed'));
+  document.querySelectorAll('.branch-content').forEach(c => c.style.display = 'block');
+  document.querySelectorAll('.preview').forEach(p => p.style.display = 'none');
+});
+
+document.getElementById('collapse-all').addEventListener('click', () => {
+  document.querySelectorAll('.msg-body').forEach(b => b.classList.add('collapsed'));
+  document.querySelectorAll('.collapse-icon').forEach(i => i.classList.add('collapsed'));
+  document.querySelectorAll('.branch-content').forEach(c => c.style.display = 'none');
+  document.querySelectorAll('.preview').forEach(p => p.style.display = 'block');
+});
+</script>
+</body>
+</html>
